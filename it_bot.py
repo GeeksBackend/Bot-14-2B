@@ -1,10 +1,26 @@
 from aiogram import Bot, Dispatcher, types, executor
+from aiogram.dispatcher.storage import FSMContext
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher.filters.state import State, StatesGroup
 from config import token
-import logging
+import logging, sqlite3, time
 
 bot = Bot(token=token)
-dp = Dispatcher(bot)
+storage = MemoryStorage()
+dp = Dispatcher(bot, storage=storage)
 logging.basicConfig(level=logging.INFO)
+
+#Реализация Базы Данных на sqlite3
+connection = sqlite3.connect('itbot.db')
+cursor = connection.cursor()
+cursor.execute(f"""CREATE TABLE IF NOT EXISTS users(
+    id INTEGER,
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
+    username VARCHAR(100),
+    date_joined VARCHAR(100)
+);
+""")
 
 start_keyboard = [
     types.KeyboardButton('О нас'),
@@ -17,7 +33,35 @@ start_button = types.ReplyKeyboardMarkup(resize_keyboard=True).add(*start_keyboa
 @dp.message_handler(commands='start')
 async def start(message:types.Message):
     print(message)
+    cursor.execute(f"SELECT id FROM users WHERE id = {message.from_user.id};")
+    output_cursor = cursor.fetchall()
+    print(output_cursor)
+    if output_cursor == []:
+        cursor.execute(f"INSERT INTO users VALUES (?, ?, ?, ?, ?)", (
+            message.from_user.id, message.from_user.first_name,
+            message.from_user.last_name, message.from_user.username, time.ctime()
+        ))
+        cursor.connection.commit()
     await message.answer(f"Привет {message.from_user.full_name}", reply_markup=start_button)
+
+class MailingState(StatesGroup):
+    text = State()
+
+@dp.message_handler(text="Рассылка")
+async def start_mailing(message:types.Message):
+    await message.answer("Введите свой текст для рассылки:")
+    await MailingState.text.set()
+
+@dp.message_handler(state=MailingState.text)
+async def send_mailing(message:types.Message, state:FSMContext):
+    await message.reply("Начинаю рассылку...")
+    cursor.execute("SELECT id FROM users;")
+    all_users_ids = cursor.fetchall()
+    print(all_users_ids)
+    for user_id in all_users_ids:
+        await bot.send_message(user_id[0], message.text)
+    await message.answer("Рассылка окончена")
+    await state.finish()
 
 @dp.message_handler(text='О нас')
 async def about_us(message:types.Message):
