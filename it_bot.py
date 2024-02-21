@@ -21,12 +21,22 @@ cursor.execute(f"""CREATE TABLE IF NOT EXISTS users(
     date_joined VARCHAR(100)
 );
 """)
+cursor.execute(f"""CREATE TABLE IF NOT EXISTS lids(
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
+    direction VARCHAR(100),
+    phone VARCHAR(100),
+    tg_user VARCHAR(255),
+    created VARCHAR(100)
+);
+""")
 
 start_keyboard = [
     types.KeyboardButton('О нас'),
     types.KeyboardButton('Адрес'),
     types.KeyboardButton('Курсы'),
-    types.KeyboardButton('Заявка на курсы')
+    types.KeyboardButton('Заявка на курсы'),
+    types.KeyboardButton('Рассылка')
 ]
 start_button = types.ReplyKeyboardMarkup(resize_keyboard=True).add(*start_keyboard)
 
@@ -44,13 +54,20 @@ async def start(message:types.Message):
         cursor.connection.commit()
     await message.answer(f"Привет {message.from_user.full_name}", reply_markup=start_button)
 
+@dp.message_handler(commands='id')
+async def get_id(message:types.Message):
+    await message.answer(f"{message.from_user.full_name} id: {message.from_user.id}")
+
 class MailingState(StatesGroup):
     text = State()
 
 @dp.message_handler(text="Рассылка")
 async def start_mailing(message:types.Message):
-    await message.answer("Введите свой текст для рассылки:")
-    await MailingState.text.set()
+    if message.from_user.id in [731982105, ]:
+        await message.answer("Введите свой текст для рассылки:")
+        await MailingState.text.set()
+    else:
+        await message.answer("У вас нет прав для данного действия")
 
 @dp.message_handler(state=MailingState.text)
 async def send_mailing(message:types.Message, state:FSMContext):
@@ -89,6 +106,53 @@ async def send_courses(message:types.Message):
 @dp.message_handler(text="Backend")
 async def backend(message:types.Message):
     await message.reply("Backend - это внутреняя часть сайта или приложения.\nСрок обучения 5 месяцев\nСтоимость: 10000 KGS в месяц")
+
+#Заявка на курсы
+class LidsState(StatesGroup):
+    first_name = State()
+    last_name = State()
+    direction = State()
+    phone = State()
+
+@dp.message_handler(text="Заявка на курсы")
+async def start_lids(message:types.Message):
+    await message.answer(f"{message.from_user.full_name} чтобы оставить заявку заполните поля")
+    await message.answer("Как: Имя, Фамилия, Направление, Номер")
+    await message.answer("Введите свое имя:")
+    await LidsState.first_name.set()
+
+@dp.message_handler(state=LidsState.first_name)
+async def get_last_name(message:types.Message, state:FSMContext):
+    await state.update_data(first_name=message.text)
+    await message.answer("Введите фамилию:")
+    await LidsState.last_name.set()
+
+@dp.message_handler(state=LidsState.last_name)
+async def get_direction(message:types.Message, state:FSMContext):
+    await state.update_data(last_name=message.text)
+    await message.answer("Введите направление:")
+    await LidsState.direction.set()
+
+@dp.message_handler(state=LidsState.direction)
+async def get_phone(message:types.Message, state:FSMContext):
+    await state.update_data(direction=message.text)
+    await message.answer("Введите номер телефона:")
+    await LidsState.phone.set()
+
+@dp.message_handler(state=LidsState.phone)
+async def save_lids(message:types.Message, state:FSMContext):
+    await state.update_data(phone=message.text)
+    await message.answer("Сохраняю данные...")
+    result = await storage.get_data(user=message.from_user.id)
+    print(result)
+    cursor.execute("INSERT INTO lids VALUES (?, ?, ?, ?, ?, ?);",
+                   (result['first_name'], result['last_name'],
+                    result['direction'], result['phone'],
+                    f"{message.from_user.id} {message.from_user.username}",
+                    time.ctime()))
+    cursor.connection.commit()
+    await message.answer("Данные записаны в базу")
+    await state.finish()
 
 @dp.message_handler(text="Назад")
 async def backroll(message:types.Message):
